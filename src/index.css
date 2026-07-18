@@ -1,0 +1,92 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-ink-50: #f4f6fb;
+  --color-ink-100: #e8ecf5;
+  --color-ink-200: #ccd6e8;
+  --color-ink-300: #a4b3ce;
+  --color-ink-400: #788cae;
+  --color-ink-500: #576d94;
+  --color-ink-600: #44567a;
+  --color-ink-700: #384663;
+  --color-ink-800: #1f2b46;
+  --color-ink-900: #141d33;
+  --color-ink-950: #0a101f;
+
+  --color-brand-50: #ecfdf5;
+  --color-brand-100: #d1fae5;
+  --color-brand-200: #a7f3d0;
+  --color-brand-300: #6ee7b7;
+  --color-brand-400: #34d399;
+  --color-brand-500: #10b981;
+  --color-brand-600: #059669;
+  --color-brand-700: #047857;
+  --color-brand-800: #065f46;
+  --color-brand-900: #064e3b;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-[#f2f4f8] text-ink-900 antialiased;
+  font-feature-settings: "cv02", "cv03", "cv04", "tnum";
+}
+
+::selection {
+  background: rgba(16, 185, 129, 0.25);
+}
+
+/* Slim scrollbars */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: #c4cddd;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #9fadcc;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+/* Hide number input spinners */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Print (export PDF via print dialog) */
+@media print {
+  body {
+    background: #ffffff !important;
+  }
+  .print-hidden {
+    display: none !important;
+  }
+  .print-area {
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+  @page {
+    margin: 12mm;
+  }
+}
