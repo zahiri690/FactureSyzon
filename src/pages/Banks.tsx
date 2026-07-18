@@ -178,11 +178,25 @@ export default function Banks() {
                   <div className={`rounded-xl p-2.5 ${active ? 'bg-white/20 text-white' : 'bg-ink-50 text-ink-600'}`}>
                     {a.type === 'epargne' ? <Wallet size={18} /> : <Landmark size={18} />}
                   </div>
-                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${
-                    active ? 'bg-white/20 text-white' : 'bg-ink-50 text-ink-500'
-                  }`}>
-                    {TYPE_LABELS[a.type]}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${
+                      active ? 'bg-white/20 text-white' : 'bg-ink-50 text-ink-500'
+                    }`}>
+                      {TYPE_LABELS[a.type]}
+                    </span>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => { e.stopPropagation(); setToDeleteAccount(a); }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); setToDeleteAccount(a); } }}
+                      className={`rounded-lg p-1.5 transition ${
+                        active ? 'text-white/80 hover:bg-white/20' : 'text-ink-300 hover:bg-rose-50 hover:text-rose-600'
+                      }`}
+                      title="Supprimer ce compte"
+                    >
+                      <Trash2 size={14} />
+                    </span>
+                  </div>
                 </div>
                 <div className={`mt-4 text-sm font-bold ${active ? 'text-white' : 'text-ink-900'}`}>{a.name}</div>
                 <div className={`text-xs ${active ? 'text-white/75' : 'text-ink-400'}`}>{a.bank}</div>

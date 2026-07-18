@@ -86,21 +86,13 @@ export const buildSeed = (): AppState => {
 
   /* --------------------------------- Banques ------------------------------- */
   const accounts = [
-    {
-      id: 'bk-qonto', name: 'Compte professionnel', bank: 'Qonto',
-      iban: 'FR76 1695 8000 0134 5678 9012 345', type: 'professionnel' as const,
-      initialBalance: 8500, color: '#10b981',
-    },
+
     {
       id: 'bk-sg', name: 'Compte courant', bank: 'Société Générale',
       iban: 'FR76 3000 3032 1122 3344 5566 789', type: 'courant' as const,
       initialBalance: 2300, color: '#6366f1',
     },
-    {
-      id: 'bk-epargne', name: "Livret d'épargne", bank: 'Crédit Agricole',
-      iban: 'FR76 1820 6000 0198 7654 3210 987', type: 'epargne' as const,
-      initialBalance: 12000, color: '#0ea5e9',
-    },
+    
   ];
 
   const tx = (
@@ -109,24 +101,9 @@ export const buildSeed = (): AppState => {
   ) => ({ id: uid(), accountId, date, label, amount, category, invoiceId, reconciled });
 
   const transactions = [
-    tx('bk-qonto', daysAgo(128), 'Règlement ' + num('FAC', 14) + ' — Atelier Lumière', 2856, 'Vente', true, 'fa-014'),
-    tx('bk-qonto', daysAgo(120), 'Loyer bureau', -850, 'Loyer'),
-    tx('bk-qonto', daysAgo(110), 'URSSAF — cotisations T3', -623.4, 'Charges sociales'),
-    tx('bk-qonto', daysAgo(95), 'Règlement ' + num('FAC', 18) + ' — Cabinet Moreau', 2100, 'Vente', true, 'fa-018'),
-    tx('bk-qonto', daysAgo(88), 'Figma — abonnement', -15, 'Logiciels'),
-    tx('bk-qonto', daysAgo(76), 'Papeterie Centrale', -214.8, 'Fournisseurs'),
-    tx('bk-qonto', daysAgo(63), 'Règlement ' + num('FAC', 21) + ' — Maison Berthelot', 3060, 'Vente', true, 'fa-021'),
     tx('bk-sg', daysAgo(55), 'Assurance RC Pro', -112, 'Assurance'),
-    tx('bk-qonto', daysAgo(48), 'Freelance renfort — intégration', -600, 'Sous-traitance'),
-    tx('bk-qonto', daysAgo(35), 'Règlement ' + num('FAC', 24) + ' — Hôtel Les Alyscamps', 1764, 'Vente', true, 'fa-024'),
-    tx('bk-qonto', daysAgo(30), 'Virement vers livret épargne', -2000, 'Autre'),
-    tx('bk-epargne', daysAgo(30), 'Virement depuis compte pro', 2000, 'Autre'),
     tx('bk-sg', daysAgo(22), 'SNCF — déplacement Lyon', -124, 'Déplacement', false),
-    tx('bk-qonto', daysAgo(12), 'Règlement ' + num('FAC', 27) + ' — Studio Nordik', 3204, 'Vente', true, 'fa-027'),
-    tx('bk-qonto', daysAgo(6), 'Règlement ' + num('FAC', 29) + ' — Maison Berthelot', 1284, 'Vente', true, 'fa-029'),
-    tx('bk-qonto', daysAgo(4), 'Acompte ' + num('FAC', 32) + ' — Boulangerie Charlot', 1000, 'Vente', true, 'fa-032'),
     tx('bk-sg', daysAgo(3), 'Déjeuner client — Le Comptoir', -86.5, 'Repas', false),
-    tx('bk-qonto', daysAgo(1), 'Notion — abonnement', -8, 'Logiciels', false),
   ];
 
   /* ------------------------------- Ressources ------------------------------ */
@@ -268,7 +245,7 @@ Depuis 2013, tout professionnel en situation de retard de paiement doit de plein
 - Calcul : montant TTC × taux annuel × (jours de retard / 365)
 
 ## Les mentionner sur vos factures
-Pour être applicables, les pénalités et l'indemnité de 40 € doivent figurer dans vos conditions générales de vente ET sur vos factures. Sans cette mention, vous y renoncez.
+Pour être applicables, les pénalités et l'indemnité de 400 DH doivent figurer dans vos conditions générales de vente ET sur vos factures. Sans cette mention, vous y renoncez.
 
 > Astuce : menacez rarement, relancez souvent. Une relance téléphonique suivie d'un e-mail dans l'heure reste le canal le plus efficace avant tout contentieux.`,
     },

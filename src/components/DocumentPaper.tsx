@@ -171,7 +171,7 @@ export default function DocumentPaper({
         {isInvoice ? (
           <p className="mt-1">
             Pénalités de retard : 3 × taux d'intérêt légal, exigibles de plein droit dès le lendemain de l'échéance.
-            Indemnité forfaitaire de recouvrement : 40 €. Pas d'escompte pour paiement anticipé.
+            Indemnité forfaitaire de recouvrement : 400 DH. Pas d'escompte pour paiement anticipé.
             Règlement par virement : {company.iban}
           </p>
         ) : (
