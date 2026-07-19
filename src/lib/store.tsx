@@ -6,7 +6,7 @@ import type {
 } from '../types';
 import { buildSeed } from './seed';
 import { nextDocNumber, todayISO, uid } from './utils';
-import { apiFetch, UnauthorizedError } from './api';
+import { apiFetch, ApiError, UnauthorizedError } from './api';
 import { useAuth } from './auth';
 
 /* --------------------------------- Reducer -------------------------------- */
@@ -148,6 +148,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const loadedRef = useRef(false);
   const skipNextSyncRef = useRef(false);
+  const stateRef = useRef<AppState>(state);
+  const isAuthenticatedRef = useRef<boolean>(isAuthenticated);
+
+  stateRef.current = state;
+  isAuthenticatedRef.current = isAuthenticated;
 
   const pushToast = useCallback((message: string, kind: Toast['kind'] = 'success') => {
     const id = uid();
@@ -167,13 +172,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const server = await apiFetch<AppState | null>('/api/state');
         if (cancelled) return;
         if (server && Array.isArray(server.docs) && Array.isArray(server.contacts)) {
+          loadedRef.current = true;
           skipNextSyncRef.current = true;
           dispatch({ type: 'hydrate', state: server });
         } else {
           // Première utilisation : on initialise le serveur avec les données de démonstration.
-          await apiFetch('/api/state', { method: 'PUT', body: JSON.stringify(state) });
+          const result = await apiFetch<{ ok: boolean; updatedAt: string }>('/api/state', {
+            method: 'PUT',
+            body: JSON.stringify(state),
+          });
+          loadedRef.current = true;
+          skipNextSyncRef.current = true;
+          dispatch({ type: 'hydrate', state: { ...state, updatedAt: result.updatedAt } });
         }
-        loadedRef.current = true;
       } catch (err) {
         if (cancelled) return;
         if (err instanceof UnauthorizedError) {
@@ -181,7 +192,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
           return;
         }
         pushToast('Impossible de charger les données depuis le serveur', 'error');
-        loadedRef.current = true;
       }
     })();
     return () => {
@@ -197,12 +207,68 @@ export function DataProvider({ children }: { children: ReactNode }) {
       skipNextSyncRef.current = false;
       return;
     }
-    apiFetch('/api/state', { method: 'PUT', body: JSON.stringify(state) }).catch((err) => {
-      if (err instanceof UnauthorizedError) logout();
-      else pushToast('Échec de synchronisation avec le serveur', 'error');
-    });
+    (async () => {
+      try {
+        const server = await apiFetch<AppState | null>('/api/state');
+        if (server && server.updatedAt && state.updatedAt && server.updatedAt > state.updatedAt) {
+          skipNextSyncRef.current = true;
+          dispatch({ type: 'hydrate', state: server });
+          pushToast('Données mises à jour depuis un autre appareil', 'info');
+          return;
+        }
+        const result = await apiFetch<{ ok: boolean; updatedAt: string }>('/api/state', {
+          method: 'PUT',
+          body: JSON.stringify(state),
+        });
+        skipNextSyncRef.current = true;
+        dispatch({ type: 'hydrate', state: { ...state, updatedAt: result.updatedAt } });
+      } catch (err) {
+        if (err instanceof ApiError && err.message === 'Données modifiées depuis un autre appareil') {
+          pushToast('Conflit : données modifiées ailleurs, rechargement…', 'error');
+          try {
+            const server = await apiFetch<AppState | null>('/api/state');
+            if (server) {
+              skipNextSyncRef.current = true;
+              dispatch({ type: 'hydrate', state: server });
+            }
+          } catch {}
+          return;
+        }
+        if (err instanceof UnauthorizedError) logout();
+        else pushToast('Échec de synchronisation avec le serveur', 'error');
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, isAuthenticated]);
+
+  // Rechargement du state serveur quand l'onglet reprend le focus (changement de navigateur / d'appareil).
+  useEffect(() => {
+    const handleFocus = async () => {
+      if (!isAuthenticatedRef.current || !loadedRef.current) return;
+      try {
+        const server = await apiFetch<AppState | null>('/api/state');
+        const local = stateRef.current;
+        if (server && server.updatedAt && local.updatedAt && server.updatedAt > local.updatedAt) {
+          skipNextSyncRef.current = true;
+          dispatch({ type: 'hydrate', state: server });
+          pushToast('Données synchronisées depuis le serveur', 'info');
+        }
+      } catch (err) {
+        if (err instanceof UnauthorizedError) logout();
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') void handleFocus();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
 
   const api = useMemo<DataApi>(() => ({
     state,

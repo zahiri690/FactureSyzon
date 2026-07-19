@@ -123,4 +123,5 @@ export interface AppState {
   resources: Resource[];
   company: CompanyInfo;
   counters: { quote: number; invoice: number };
+  updatedAt: string;
 }

@@ -274,5 +274,6 @@ Pour être applicables, les pénalités et l'indemnité de 400 DH doivent figure
     resources,
     company,
     counters: { quote: 0, invoice: 0 },
+    updatedAt: new Date().toISOString(),
   };
 };

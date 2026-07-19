@@ -13,19 +13,33 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const session = await requireSession(request, env);
   if (session instanceof Response) return session;
 
-  let raw: string;
+  let parsed: Record<string, unknown>;
   try {
-    const parsed: unknown = await request.json();
-    raw = JSON.stringify(parsed);
+    parsed = (await request.json()) as Record<string, unknown>;
   } catch {
     return json({ error: 'JSON invalide' }, 400);
   }
 
+  const incomingUpdatedAt = typeof parsed.updatedAt === 'string' ? parsed.updatedAt : null;
+
+  const existing = await env.DB.prepare('SELECT updated_at FROM app_state WHERE id = 1')
+    .first<{ updated_at: string }>();
+
+  if (existing && incomingUpdatedAt && existing.updated_at > incomingUpdatedAt) {
+    return json(
+      { error: 'Données modifiées depuis un autre appareil', updatedAt: existing.updated_at },
+      409,
+    );
+  }
+
   const now = new Date().toISOString();
+  parsed.updatedAt = now;
+  const raw = JSON.stringify(parsed);
+
   await env.DB.prepare(
     `INSERT INTO app_state (id, data, updated_at) VALUES (1, ?, ?)
      ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
   ).bind(raw, now).run();
 
-  return json({ ok: true });
+  return json({ ok: true, updatedAt: now });
 };
