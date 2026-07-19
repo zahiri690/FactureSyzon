@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type {
   AppState, BankAccount, BankTransaction, Contact, Doc, ID,
@@ -6,8 +6,8 @@ import type {
 } from '../types';
 import { buildSeed } from './seed';
 import { nextDocNumber, todayISO, uid } from './utils';
-
-const STORAGE_KEY = 'facturo-data-v1';
+import { apiFetch, UnauthorizedError } from './api';
+import { useAuth } from './auth';
 
 /* --------------------------------- Reducer -------------------------------- */
 
@@ -26,7 +26,8 @@ type Action =
   | { type: 'tx/add'; tx: BankTransaction }
   | { type: 'tx/delete'; id: ID }
   | { type: 'tx/toggle'; id: ID }
-  | { type: 'reset' };
+  | { type: 'reset' }
+  | { type: 'hydrate'; state: AppState };
 
 const upsert = <T extends { id: ID }>(list: T[], item: T): T[] => {
   const i = list.findIndex((x) => x.id === item.id);
@@ -102,6 +103,8 @@ function reducer(state: AppState, action: Action): AppState {
       };
     case 'reset':
       return buildSeed();
+    case 'hydrate':
+      return action.state;
     default:
       return state;
   }
@@ -139,36 +142,67 @@ interface DataApi {
 
 const DataContext = createContext<DataApi | null>(null);
 
-const load = (): AppState => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as AppState;
-      if (parsed && Array.isArray(parsed.docs) && Array.isArray(parsed.contacts)) return parsed;
-    }
-  } catch {
-    /* données corrompues → seed */
-  }
-  return buildSeed();
-};
-
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, undefined, load);
+  const { isAuthenticated, logout } = useAuth();
+  const [state, dispatch] = useReducer(reducer, undefined, buildSeed);
   const [toasts, setToasts] = useState<Toast[]>([]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      /* quota dépassé */
-    }
-  }, [state]);
+  const loadedRef = useRef(false);
+  const skipNextSyncRef = useRef(false);
 
   const pushToast = useCallback((message: string, kind: Toast['kind'] = 'success') => {
     const id = uid();
     setToasts((t) => [...t, { id, message, kind }]);
     window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200);
   }, []);
+
+  // Chargement des données depuis le serveur (D1) à la connexion : partagées entre tous les navigateurs/appareils.
+  useEffect(() => {
+    if (!isAuthenticated) {
+      loadedRef.current = false;
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const server = await apiFetch<AppState | null>('/api/state');
+        if (cancelled) return;
+        if (server && Array.isArray(server.docs) && Array.isArray(server.contacts)) {
+          skipNextSyncRef.current = true;
+          dispatch({ type: 'hydrate', state: server });
+        } else {
+          // Première utilisation : on initialise le serveur avec les données de démonstration.
+          await apiFetch('/api/state', { method: 'PUT', body: JSON.stringify(state) });
+        }
+        loadedRef.current = true;
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof UnauthorizedError) {
+          logout();
+          return;
+        }
+        pushToast('Impossible de charger les données depuis le serveur', 'error');
+        loadedRef.current = true;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
+
+  // Synchronisation vers le serveur à chaque changement (après le chargement initial).
+  useEffect(() => {
+    if (!isAuthenticated || !loadedRef.current) return;
+    if (skipNextSyncRef.current) {
+      skipNextSyncRef.current = false;
+      return;
+    }
+    apiFetch('/api/state', { method: 'PUT', body: JSON.stringify(state) }).catch((err) => {
+      if (err instanceof UnauthorizedError) logout();
+      else pushToast('Échec de synchronisation avec le serveur', 'error');
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, isAuthenticated]);
 
   const api = useMemo<DataApi>(() => ({
     state,

@@ -6,19 +6,16 @@ import { inputCls } from '../components/ui';
 import logo from '../assets/logo.syzon.png';
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, loginError } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
-    const ok = await login(username, password);
+    await login(username, password);
     setLoading(false);
-    if (!ok) setError('Identifiant ou mot de passe incorrect.');
   };
 
   return (
@@ -60,7 +57,7 @@ export default function Login() {
             </div>
           </label>
 
-          {error && <p className="text-sm font-semibold text-red-600">{error}</p>}
+          {loginError && <p className="text-sm font-semibold text-red-600">{loginError}</p>}
 
           <button
             type="submit"
