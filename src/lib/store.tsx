@@ -4,7 +4,7 @@ import type {
   AppState, BankAccount, BankTransaction, Contact, Doc, ID,
   LibraryItem, Payment,
 } from '../types';
-import { buildSeed } from './seed';
+import { emptyState } from './seed';
 import { nextDocNumber, todayISO, uid } from './utils';
 import { apiFetch, ApiError, UnauthorizedError } from './api';
 import { useAuth } from './auth';
@@ -102,7 +102,7 @@ function reducer(state: AppState, action: Action): AppState {
         ),
       };
     case 'reset':
-      return buildSeed();
+      return emptyState();
     case 'hydrate':
       return action.state;
     default:
@@ -144,7 +144,7 @@ const DataContext = createContext<DataApi | null>(null);
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated, logout } = useAuth();
-  const [state, dispatch] = useReducer(reducer, undefined, buildSeed);
+  const [state, dispatch] = useReducer(reducer, undefined, emptyState);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const loadedRef = useRef(false);
   const skipNextSyncRef = useRef(false);
@@ -176,14 +176,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
           skipNextSyncRef.current = true;
           dispatch({ type: 'hydrate', state: server });
         } else {
-          // Première utilisation : on initialise le serveur avec les données de démonstration.
+          // Première utilisation : on initialise le serveur avec un state vide.
           const result = await apiFetch<{ ok: boolean; updatedAt: string }>('/api/state', {
             method: 'PUT',
-            body: JSON.stringify(state),
+            body: JSON.stringify(emptyState()),
           });
           loadedRef.current = true;
           skipNextSyncRef.current = true;
-          dispatch({ type: 'hydrate', state: { ...state, updatedAt: result.updatedAt } });
+          dispatch({ type: 'hydrate', state: { ...emptyState(), updatedAt: result.updatedAt } });
         }
       } catch (err) {
         if (cancelled) return;
@@ -393,7 +393,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     toggleTransaction: (id) => dispatch({ type: 'tx/toggle', id }),
     resetData: () => {
       dispatch({ type: 'reset' });
-      pushToast('Données de démonstration restaurées', 'info');
+      pushToast('Données réinitialisées', 'info');
     },
   }), [state, pushToast]);
 
