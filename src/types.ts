@@ -51,6 +51,14 @@ export interface Payment {
   amount: number;
   method: PaymentMethod;
   accountId?: ID;
+  label?: string; // ex. « Acompte »
+}
+
+export type DepositMode = 'percent' | 'amount';
+
+export interface DepositRequest {
+  mode: DepositMode; // 'percent' = % du TTC, 'amount' = montant TTC en DH
+  value: number;
 }
 
 export interface Doc {
@@ -64,6 +72,8 @@ export interface Doc {
   lines: DocLine[];
   payments: Payment[];
   quoteId?: ID; // facture issue d'un devis
+  depositRequest?: DepositRequest; // acompte demandé au client sur la facture
+  depositPercent?: number; // facture d'acompte : % du devis facturé
   notes?: string;
   createdAt: string;
 }

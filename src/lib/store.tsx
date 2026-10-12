@@ -1,11 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type {
-  AppState, BankAccount, BankTransaction, Contact, Doc, ID,
+  AppState, BankAccount, BankTransaction, Contact, DepositMode, Doc, ID,
   LibraryItem, Payment,
 } from '../types';
 import { emptyState } from './seed';
-import { nextDocNumber, todayISO, uid } from './utils';
+import { computeTotals, fmtMAD, fmtNum, nextDocNumber, todayISO, uid } from './utils';
 import { apiFetch, ApiError, UnauthorizedError } from './api';
 import { useAuth } from './auth';
 
@@ -130,6 +130,7 @@ interface DataApi {
   setDocStatus: (id: ID, status: Doc['status']) => void;
   addPayment: (id: ID, payment: Payment) => void;
   convertQuote: (quoteId: ID) => ID | null;
+  createDepositInvoice: (quoteId: ID, mode: DepositMode, value: number) => ID | null;
   duplicateDoc: (id: ID) => ID;
   saveAccount: (a: BankAccount) => void;
   deleteAccount: (id: ID) => void;
@@ -319,7 +320,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             id: uid(),
             accountId: payment.accountId,
             date: payment.date,
-            label: `Règlement ${doc.number}${contact ? ` — ${contact.company}` : ''}`,
+            label: `${payment.label ?? 'Règlement'} ${doc.number}${contact ? ` — ${contact.company}` : ''}`,
             amount: payment.amount,
             category: 'Vente',
             invoiceId: doc.id,
@@ -332,10 +333,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
     convertQuote: (quoteId) => {
       const quote = state.docs.find((d) => d.id === quoteId);
       if (!quote || quote.kind !== 'devis') return null;
-      if (state.docs.some((d) => d.quoteId === quoteId)) {
+      if (state.docs.some((d) => d.quoteId === quoteId && d.depositPercent == null)) {
         pushToast('Ce devis a déjà été converti en facture', 'error');
         return null;
       }
+      // Facture de solde : déduction des factures d'acompte déjà émises sur ce devis.
+      const depositInvoices = state.docs.filter(
+        (d) => d.quoteId === quoteId && d.depositPercent != null,
+      );
+      const deductionLines = depositInvoices.flatMap((inv) =>
+        inv.lines.map((l) => ({
+          id: uid(),
+          label: `Acompte déjà facturé — ${inv.number}`,
+          description: l.label,
+          quantity: 1,
+          unit: 'forfait',
+          unitPrice: -Math.round(l.quantity * l.unitPrice * 100) / 100,
+          vatRate: l.vatRate,
+        })),
+      );
       const invoice: Doc = {
         id: uid(),
         kind: 'facture',
@@ -344,7 +360,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         issuedAt: todayISO(),
         dueAt: todayISO(),
         status: 'envoyee',
-        lines: quote.lines.map((l) => ({ ...l, id: uid() })),
+        lines: [...quote.lines.map((l) => ({ ...l, id: uid() })), ...deductionLines],
         payments: [],
         quoteId: quote.id,
         notes: quote.notes,
@@ -352,7 +368,58 @@ export function DataProvider({ children }: { children: ReactNode }) {
       };
       invoice.dueAt = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
       dispatch({ type: 'doc/convert', quoteId, invoice });
-      pushToast(`Facture ${invoice.number} créée à partir du devis`);
+      pushToast(
+        depositInvoices.length > 0
+          ? `Facture de solde ${invoice.number} créée (acomptes déduits)`
+          : `Facture ${invoice.number} créée à partir du devis`,
+      );
+      return invoice.id;
+    },
+    createDepositInvoice: (quoteId, mode, value) => {
+      const quote = state.docs.find((d) => d.id === quoteId);
+      if (!quote || quote.kind !== 'devis') return null;
+      const ttc = computeTotals(quote.lines).ttc;
+      const fraction =
+        mode === 'percent' ? Math.min(100, Math.max(0, value)) / 100 : Math.min(1, Math.max(0, value / ttc));
+      if (fraction <= 0 || ttc <= 0) {
+        pushToast('Montant d\'acompte invalide', 'error');
+        return null;
+      }
+      const percent = Math.round(fraction * 10000) / 100;
+      const pctLabel =
+        mode === 'percent' ? `${fmtNum(percent)} %` : fmtMAD(Math.round(ttc * fraction * 100) / 100);
+      // Une ligne d'acompte par taux de TVA présent dans le devis (au prorata).
+      const byRate = new Map<number, number>();
+      for (const l of quote.lines) {
+        byRate.set(l.vatRate, (byRate.get(l.vatRate) ?? 0) + l.quantity * l.unitPrice);
+      }
+      const multiRate = byRate.size > 1;
+      const lines = [...byRate.entries()].map(([rate, base]) => ({
+        id: uid(),
+        label: `Acompte de ${pctLabel} sur devis ${quote.number}`,
+        description: multiRate ? `Part de la base TVA ${fmtNum(rate)} %` : undefined,
+        quantity: 1,
+        unit: 'forfait',
+        unitPrice: Math.round(base * fraction * 100) / 100,
+        vatRate: rate,
+      }));
+      const invoice: Doc = {
+        id: uid(),
+        kind: 'facture',
+        number: nextDocNumber('facture', state.counters),
+        contactId: quote.contactId,
+        issuedAt: todayISO(),
+        dueAt: todayISO(),
+        status: 'envoyee',
+        lines,
+        payments: [],
+        quoteId: quote.id,
+        depositPercent: percent,
+        notes: `Facture d'acompte de ${pctLabel} sur le devis ${quote.number} (${fmtMAD(ttc)} TTC). Le solde fera l'objet d'une facture séparée.`,
+        createdAt: todayISO(),
+      };
+      dispatch({ type: 'doc/save', doc: invoice });
+      pushToast(`Facture d'acompte ${invoice.number} créée (${pctLabel})`);
       return invoice.id;
     },
     duplicateDoc: (id) => {

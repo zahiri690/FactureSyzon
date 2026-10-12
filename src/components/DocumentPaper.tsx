@@ -1,6 +1,9 @@
 import type { CompanyInfo, Contact, Doc } from '../types';
 import logo from '../assets/logo.syzon.png';
-import { computeTotals, docStatusMeta, fmtDate, fmtMAD, fmtNum, paidAmount } from '../lib/utils';
+import {
+  computeTotals, depositRequestHt, depositRequestTtc, docStatusMeta, fmtDate, fmtMAD, fmtNum,
+  isDepositInvoice, paidAmount,
+} from '../lib/utils';
 
 /** Aperçu « papier » d'un devis ou d'une facture (imprimable en PDF). */
 export default function DocumentPaper({
@@ -16,6 +19,8 @@ export default function DocumentPaper({
   const paid = paidAmount(doc);
   const meta = docStatusMeta(doc);
   const isInvoice = doc.kind === 'facture';
+  const depositTtc = depositRequestTtc(doc);
+  const depositHt = depositRequestHt(doc);
 
   return (
     <div className="print-area rounded-2xl border border-ink-100 bg-white p-7 shadow-[0_1px_3px_rgba(16,24,40,0.06)] sm:p-10">
@@ -30,7 +35,7 @@ export default function DocumentPaper({
         </div>
         <div className="text-right">
           <div className="text-3xl font-extrabold tracking-tight text-ink-900">
-            {isInvoice ? 'FACTURE' : 'DEVIS'}
+            {isInvoice ? (isDepositInvoice(doc) ? "FACTURE D'ACOMPTE" : 'FACTURE') : 'DEVIS'}
           </div>
           <div className="mt-0.5 font-mono text-sm font-semibold text-ink-500">{doc.number}</div>
           <div className="mt-2">
@@ -140,6 +145,25 @@ export default function DocumentPaper({
             <span className="text-sm font-bold">Total TTC</span>
             <span className="font-mono text-lg font-bold">{fmtMAD(totals.ttc)}</span>
           </div>
+          {isInvoice && depositTtc > 0 && (
+            <div className="space-y-1.5 rounded-xl border border-amber-200/70 bg-amber-50/60 px-4 py-3">
+              <div className="flex justify-between font-bold text-amber-800">
+                <span>
+                  Acompte à verser
+                  {doc.depositRequest?.mode === 'percent' && ` (${fmtNum(doc.depositRequest.value)} %)`}
+                </span>
+                <span className="font-mono">{fmtMAD(depositTtc)}</span>
+              </div>
+              <div className="flex justify-between text-xs text-amber-700/80">
+                <span>Soit HT</span>
+                <span className="font-mono">{fmtMAD(depositHt)}</span>
+              </div>
+              <div className="flex justify-between border-t border-amber-200/60 pt-1.5 text-ink-600">
+                <span>Solde à régler</span>
+                <span className="font-mono font-semibold">{fmtMAD(Math.max(0, totals.ttc - depositTtc))}</span>
+              </div>
+            </div>
+          )}
           {isInvoice && paid > 0 && (
             <>
               <div className="flex justify-between pt-1 text-ink-500">
@@ -170,6 +194,9 @@ export default function DocumentPaper({
         </p>
         {isInvoice ? (
           <p className="mt-1">
+            {isDepositInvoice(doc) && (
+              <>Facture d'acompte : le solde fera l'objet d'une facture séparée. </>
+            )}
             Pénalités de retard : 3 × taux d'intérêt légal, exigibles de plein droit dès le lendemain de l'échéance.
             Indemnité forfaitaire de recouvrement : 400 DH. Pas d'escompte pour paiement anticipé.
             Règlement par virement : {company.iban}

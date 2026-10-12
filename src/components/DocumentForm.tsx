@@ -33,6 +33,8 @@ export default function DocumentForm({ kind }: { kind: 'devis' | 'facture' }) {
   const [dueAt, setDueAt] = useState(existing?.dueAt ?? addDays(todayISO(), 30));
   const [notes, setNotes] = useState(existing?.notes ?? '');
   const [lines, setLines] = useState<DocLine[]>(existing ? existing.lines.map((l) => ({ ...l })) : [emptyLine()]);
+  const [depMode, setDepMode] = useState<'none' | 'percent' | 'amount'>(existing?.depositRequest?.mode ?? 'none');
+  const [depValue, setDepValue] = useState(existing?.depositRequest?.value ?? 50);
   const [error, setError] = useState('');
 
   const number = existing?.number ?? nextDocNumber(kind, state.counters);
@@ -84,6 +86,8 @@ export default function DocumentForm({ kind }: { kind: 'devis' | 'facture' }) {
         .map((l) => ({ ...l, label: l.label.trim() })),
       payments: existing?.payments ?? [],
       quoteId: existing?.quoteId,
+      depositRequest: isInvoice && depMode !== 'none' && depValue > 0 ? { mode: depMode, value: depValue } : undefined,
+      depositPercent: existing?.depositPercent,
       notes: notes.trim() || undefined,
       createdAt: existing?.createdAt ?? todayISO(),
     };
@@ -251,6 +255,57 @@ export default function DocumentForm({ kind }: { kind: 'devis' | 'facture' }) {
               </p>
             )}
           </Card>
+
+          {/* Acompte */}
+          {isInvoice && (
+            <Card className="p-6">
+              <h2 className="mb-4 text-sm font-bold uppercase tracking-wide text-ink-500">
+                Acompte à verser (optionnel)
+              </h2>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex gap-1.5 rounded-xl border border-ink-200 bg-white p-1">
+                  {(
+                    [
+                      { key: 'none', label: 'Aucun' },
+                      { key: 'percent', label: 'Pourcentage' },
+                      { key: 'amount', label: 'Montant TTC' },
+                    ] as const
+                  ).map((o) => (
+                    <button
+                      key={o.key}
+                      type="button"
+                      onClick={() => setDepMode(o.key)}
+                      className={`rounded-lg px-3.5 py-1.5 text-xs font-bold transition ${
+                        depMode === o.key ? 'bg-ink-950 text-white shadow' : 'text-ink-500 hover:bg-ink-50'
+                      }`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+                {depMode !== 'none' && (
+                  <div className="relative w-36">
+                    <input
+                      type="number" min={0} step={depMode === 'percent' ? 5 : 100}
+                      max={depMode === 'percent' ? 100 : undefined}
+                      className={inputCls + ' !py-2 pr-8 text-right font-mono'}
+                      value={depValue || ''}
+                      onChange={(e) => setDepValue(parseFloat(e.target.value) || 0)}
+                    />
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-ink-400">
+                      {depMode === 'percent' ? '%' : 'DH'}
+                    </span>
+                  </div>
+                )}
+              </div>
+              {depMode !== 'none' && depValue > 0 && totals.ttc > 0 && (
+                <p className="mt-3 rounded-xl bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-700 ring-1 ring-amber-200/60">
+                  Acompte : {fmtMAD(depMode === 'percent' ? (totals.ttc * depValue) / 100 : Math.min(depValue, totals.ttc))} TTC
+                  {' · '}Solde restant : {fmtMAD(Math.max(0, totals.ttc - (depMode === 'percent' ? (totals.ttc * depValue) / 100 : Math.min(depValue, totals.ttc))))}
+                </p>
+              )}
+            </Card>
+          )}
 
           {/* Notes */}
           <Card className="p-6">

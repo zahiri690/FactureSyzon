@@ -1,22 +1,23 @@
 import {
   ArrowLeft, ArrowRightLeft, BadgeCheck, Ban, CheckCircle2, Copy, CreditCard,
-  FileX2, Pencil, Printer, Send, Trash2,
+  FileX2, HandCoins, Pencil, Percent, Printer, Send, Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import DocumentPaper from '../components/DocumentPaper';
 import { Card, ConfirmDialog, Field, Modal, StatusBadge, inputCls, selectCls, selectStyle } from '../components/ui';
 import { useData } from '../lib/store';
+import type { DepositMode } from '../types';
 import {
-  computeTotals, docStatusMeta, effectiveInvoiceStatus, fmtDate, fmtMAD,
-  methodLabel, paidAmount, remainingAmount, todayISO, uid,
+  computeTotals, depositRequestTtc, docStatusMeta, effectiveInvoiceStatus, fmtDate, fmtMAD, fmtNum,
+  isDepositInvoice, methodLabel, paidAmount, remainingAmount, todayISO, uid,
 } from '../lib/utils';
 
 export default function DocumentDetail({ kind }: { kind: 'devis' | 'facture' }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const {
-    state, setDocStatus, deleteDoc, addPayment, convertQuote, duplicateDoc,
+    state, setDocStatus, deleteDoc, addPayment, convertQuote, createDepositInvoice, duplicateDoc,
   } = useData();
 
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -25,6 +26,9 @@ export default function DocumentDetail({ kind }: { kind: 'devis' | 'facture' }) 
   const [payDate, setPayDate] = useState(todayISO());
   const [payMethod, setPayMethod] = useState('virement');
   const [payAccount, setPayAccount] = useState(state.accounts[0]?.id ?? '');
+  const [depModal, setDepModal] = useState(false);
+  const [depMode, setDepMode] = useState<DepositMode>('percent');
+  const [depValue, setDepValue] = useState(50);
 
   const doc = state.docs.find((d) => d.id === id && d.kind === kind);
   if (!doc) {
@@ -49,15 +53,20 @@ export default function DocumentDetail({ kind }: { kind: 'devis' | 'facture' }) 
   const paid = paidAmount(doc);
   const remaining = remainingAmount(doc);
   const status = isInvoice ? effectiveInvoiceStatus(doc) : doc.status;
+  const linkedInvoices = state.docs.filter((d) => d.quoteId === doc.id);
+  const depositInvoices = linkedInvoices.filter((d) => isDepositInvoice(d));
   const alreadyConverted = doc.quoteId
     ? true
-    : state.docs.some((d) => d.quoteId === doc.id);
-  const linkedInvoice = state.docs.find((d) => d.quoteId === doc.id);
+    : linkedInvoices.some((d) => !isDepositInvoice(d));
   const sourceQuote = doc.quoteId ? state.docs.find((d) => d.id === doc.quoteId) : undefined;
   const paidPct = Math.min(100, totals.ttc > 0 ? (paid / totals.ttc) * 100 : 0);
+  const depositTtc = isInvoice ? depositRequestTtc(doc) : 0;
+  const depositRemaining = Math.max(0, depositTtc - paid);
+  const depPreviewTtc =
+    depMode === 'percent' ? (totals.ttc * depValue) / 100 : Math.min(depValue, totals.ttc);
 
   const openPayModal = () => {
-    setPayAmount(Math.round(remaining * 100) / 100);
+    setPayAmount(Math.round((depositRemaining > 0 ? Math.min(depositRemaining, remaining) : remaining) * 100) / 100);
     setPayDate(todayISO());
     setPayMethod('virement');
     setPayAccount(state.accounts[0]?.id ?? '');
@@ -138,6 +147,13 @@ export default function DocumentDetail({ kind }: { kind: 'devis' | 'facture' }) 
                   ? 'Facture intégralement réglée.'
                   : `Reste à encaisser : ${fmtMAD(remaining)}`}
               </p>
+              {depositTtc > 0 && (
+                <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 ring-1 ring-amber-200/60">
+                  Acompte demandé : {fmtMAD(depositTtc)} TTC
+                  {doc.depositRequest?.mode === 'percent' && ` (${fmtNum(doc.depositRequest.value)} %)`}
+                  {depositRemaining > 0 ? ` — reste ${fmtMAD(depositRemaining)} à encaisser` : ' — encaissé'}
+                </p>
+              )}
 
               {doc.payments.length > 0 && (
                 <ul className="mt-4 space-y-2 border-t border-ink-50 pt-4">
@@ -145,7 +161,10 @@ export default function DocumentDetail({ kind }: { kind: 'devis' | 'facture' }) 
                     <li key={p.id} className="flex items-center gap-3 text-sm">
                       <CheckCircle2 size={15} className="shrink-0 text-brand-500" />
                       <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-ink-700">{methodLabel(p.method)}</div>
+                        <div className="font-semibold text-ink-700">
+                          {methodLabel(p.method)}
+                          {p.label && <span className="font-normal text-ink-400"> · {p.label}</span>}
+                        </div>
                         <div className="text-xs text-ink-400">{fmtDate(p.date)}</div>
                       </div>
                       <span className="font-mono font-bold text-brand-700">{fmtMAD(p.amount)}</span>
@@ -159,7 +178,11 @@ export default function DocumentDetail({ kind }: { kind: 'devis' | 'facture' }) 
           {/* Lien devis ↔ facture */}
           {sourceQuote && (
             <Card className="p-5">
-              <p className="text-xs text-ink-500">Issue du devis</p>
+              <p className="text-xs text-ink-500">
+                {isDepositInvoice(doc)
+                  ? `Facture d'acompte de ${fmtNum(doc.depositPercent ?? 0)} % issue du devis`
+                  : 'Issue du devis'}
+              </p>
               <Link
                 to={`/devis/${sourceQuote.id}`}
                 className="mt-1 inline-flex items-center gap-1.5 font-mono text-sm font-bold text-brand-700 hover:underline"
@@ -168,15 +191,26 @@ export default function DocumentDetail({ kind }: { kind: 'devis' | 'facture' }) 
               </Link>
             </Card>
           )}
-          {linkedInvoice && (
+          {linkedInvoices.length > 0 && (
             <Card className="p-5">
-              <p className="text-xs text-ink-500">Converti en facture</p>
-              <Link
-                to={`/factures/${linkedInvoice.id}`}
-                className="mt-1 inline-flex items-center gap-1.5 font-mono text-sm font-bold text-brand-700 hover:underline"
-              >
-                <ArrowRightLeft size={13} /> {linkedInvoice.number}
-              </Link>
+              <p className="text-xs text-ink-500">Factures liées</p>
+              <ul className="mt-1.5 space-y-1.5">
+                {linkedInvoices.map((inv) => (
+                  <li key={inv.id}>
+                    <Link
+                      to={`/factures/${inv.id}`}
+                      className="inline-flex items-center gap-1.5 font-mono text-sm font-bold text-brand-700 hover:underline"
+                    >
+                      <ArrowRightLeft size={13} /> {inv.number}
+                    </Link>
+                    <span className="ml-1.5 text-xs text-ink-400">
+                      {isDepositInvoice(inv)
+                        ? `acompte ${fmtNum(inv.depositPercent ?? 0)} %`
+                        : 'facture de solde'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </Card>
           )}
 
@@ -201,15 +235,28 @@ export default function DocumentDetail({ kind }: { kind: 'devis' | 'facture' }) 
               </>
             )}
             {!isInvoice && doc.status === 'accepte' && !alreadyConverted && (
-              <button
-                className={btnBrand}
-                onClick={() => {
-                  const invId = convertQuote(doc.id);
-                  if (invId) navigate(`/factures/${invId}`);
-                }}
-              >
-                <ArrowRightLeft size={15} /> Convertir en facture
-              </button>
+              <>
+                <button
+                  className={btnBrand}
+                  onClick={() => {
+                    setDepMode('percent');
+                    setDepValue(50);
+                    setDepModal(true);
+                  }}
+                >
+                  <Percent size={15} /> Facture d'acompte
+                </button>
+                <button
+                  className={btnGhost}
+                  onClick={() => {
+                    const invId = convertQuote(doc.id);
+                    if (invId) navigate(`/factures/${invId}`);
+                  }}
+                >
+                  <ArrowRightLeft size={15} />
+                  {depositInvoices.length > 0 ? 'Facture de solde' : 'Convertir en facture'}
+                </button>
+              </>
             )}
             {!isInvoice && doc.status === 'refuse' && (
               <button className={btnGhost} onClick={() => setDocStatus(doc.id, 'envoye')}>
@@ -228,6 +275,23 @@ export default function DocumentDetail({ kind }: { kind: 'devis' | 'facture' }) 
                 <button className={btnBrand} onClick={openPayModal}>
                   <CreditCard size={15} /> Enregistrer un règlement
                 </button>
+                {depositRemaining > 0 && (
+                  <button
+                    className={btnGhost}
+                    onClick={() =>
+                      addPayment(doc.id, {
+                        id: uid(),
+                        date: todayISO(),
+                        amount: Math.round(Math.min(depositRemaining, remaining) * 100) / 100,
+                        method: 'virement',
+                        accountId: state.accounts[0]?.id,
+                        label: 'Acompte',
+                      })
+                    }
+                  >
+                    <HandCoins size={15} /> Encaisser l'acompte ({fmtMAD(Math.min(depositRemaining, remaining))})
+                  </button>
+                )}
                 <button
                   className={btnGhost}
                   onClick={() =>
@@ -329,6 +393,85 @@ export default function DocumentDetail({ kind }: { kind: 'devis' | 'facture' }) 
               className="rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-brand-600/25 transition hover:bg-brand-700 disabled:opacity-40"
             >
               Enregistrer {payAmount > 0 ? fmtMAD(payAmount) : ''}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modale facture d'acompte */}
+      <Modal open={depModal} onClose={() => setDepModal(false)} title="Facture d'acompte">
+        <div className="space-y-4">
+          <p className="text-sm leading-relaxed text-ink-500">
+            Une facture d'acompte sera créée à partir du devis{' '}
+            <span className="font-mono font-semibold text-ink-700">{doc.number}</span> (
+            {fmtMAD(totals.ttc)} TTC). Elle ne facturera que le montant de l'acompte.
+            {depositInvoices.length > 0 && (
+              <>
+                {' '}
+                Acomptes déjà facturés :{' '}
+                {depositInvoices.map((i) => fmtNum(i.depositPercent ?? 0)).join(' + ')} %.
+              </>
+            )}
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Mode de calcul">
+              <select
+                className={selectCls}
+                style={selectStyle}
+                value={depMode}
+                onChange={(e) => {
+                  const m = e.target.value as DepositMode;
+                  setDepMode(m);
+                  setDepValue(m === 'percent' ? 50 : Math.round(totals.ttc / 2));
+                }}
+              >
+                <option value="percent">Pourcentage du TTC</option>
+                <option value="amount">Montant fixe TTC</option>
+              </select>
+            </Field>
+            <Field label={depMode === 'percent' ? 'Pourcentage' : 'Montant'}>
+              <div className="relative">
+                <input
+                  type="number" min={0} step={depMode === 'percent' ? 5 : 100}
+                  max={depMode === 'percent' ? 100 : undefined}
+                  className={inputCls + ' pr-8 text-right font-mono'}
+                  value={depValue || ''}
+                  onChange={(e) => setDepValue(parseFloat(e.target.value) || 0)}
+                />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-ink-400">
+                  {depMode === 'percent' ? '%' : 'DH'}
+                </span>
+              </div>
+            </Field>
+          </div>
+          {depValue > 0 && totals.ttc > 0 && depPreviewTtc > 0 && (
+            <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 ring-1 ring-amber-200/60">
+              Acompte à facturer : {fmtMAD(depPreviewTtc)} TTC
+              <span className="block text-xs font-normal text-amber-700/80">
+                soit {fmtMAD(totals.ttc > 0 ? depPreviewTtc * (totals.ht / totals.ttc) : 0)} HT
+                {' · '}solde restant : {fmtMAD(Math.max(0, totals.ttc - depPreviewTtc))}
+              </span>
+            </p>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              onClick={() => setDepModal(false)}
+              className="rounded-xl px-4 py-2.5 text-sm font-semibold text-ink-500 hover:bg-ink-50"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={() => {
+                const invId = createDepositInvoice(doc.id, depMode, depValue);
+                if (invId) {
+                  setDepModal(false);
+                  navigate(`/factures/${invId}`);
+                }
+              }}
+              disabled={depValue <= 0 || depPreviewTtc <= 0}
+              className="rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-brand-600/25 transition hover:bg-brand-700 disabled:opacity-40"
+            >
+              Créer la facture d'acompte
             </button>
           </div>
         </div>

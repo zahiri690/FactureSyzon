@@ -80,6 +80,28 @@ export const paidAmount = (doc: Doc): number =>
 export const remainingAmount = (doc: Doc): number =>
   Math.max(0, computeTotals(doc.lines).ttc - paidAmount(doc));
 
+/* -------------------------------- Acomptes -------------------------------- */
+
+export const isDepositInvoice = (doc: Doc): boolean => doc.depositPercent != null;
+
+/** Montant TTC de l'acompte demandé sur une facture (0 si non défini). */
+export const depositRequestTtc = (doc: Doc): number => {
+  if (!doc.depositRequest) return 0;
+  const ttc = computeTotals(doc.lines).ttc;
+  const v =
+    doc.depositRequest.mode === 'percent'
+      ? (ttc * doc.depositRequest.value) / 100
+      : doc.depositRequest.value;
+  return Math.min(ttc, Math.max(0, Math.round(v * 100) / 100));
+};
+
+/** Équivalent HT de l'acompte demandé (au prorata HT/TTC). */
+export const depositRequestHt = (doc: Doc): number => {
+  const t = computeTotals(doc.lines);
+  if (!doc.depositRequest || t.ttc <= 0) return 0;
+  return Math.round(depositRequestTtc(doc) * (t.ht / t.ttc) * 100) / 100;
+};
+
 /* -------------------------------- Status -------------------------------- */
 
 export interface StatusMeta {
